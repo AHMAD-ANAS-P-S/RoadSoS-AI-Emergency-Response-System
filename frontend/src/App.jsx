@@ -6,7 +6,7 @@ import SOSScreen from './screens/SOSScreen';
 import MapScreen from './screens/MapScreen';
 import ChatScreen from './screens/ChatScreen';
 import SettingsScreen from './screens/SettingsScreen';
-import BottomNav from './components/BottomNav';
+import { BottomNav } from './components';
 import { initOfflineDB } from './services/spatialQuery';
 import './index.css';
 

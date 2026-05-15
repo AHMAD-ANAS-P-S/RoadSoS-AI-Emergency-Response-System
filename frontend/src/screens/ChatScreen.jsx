@@ -1,105 +1,95 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { useTranslation } from 'react-i18next';
-import { Send, Bot, User, Mic } from 'lucide-react';
-import VoiceInput from '../components/VoiceInput';
-import TriageBadge from '../components/TriageBadge';
+﻿import React, { useState, useRef, useEffect } from 'react';
+import { Send, Bot, User, Phone } from 'lucide-react';
+import { VoiceInput, TriageBadge } from '../components';
 import { useTriage } from '../hooks/useTriage';
 import { useGeolocation } from '../hooks/useGeolocation';
 import { queryNearest, queryNearestOnline } from '../services/spatialQuery';
 
 const FIRST_AID = {
   CRITICAL: [
-    '🩸 Apply firm pressure to any bleeding wounds with a clean cloth',
-    '🫁 Check if person is breathing — if not, start CPR (30 compressions, 2 breaths)',
-    '🚫 Do NOT move the person unless in immediate danger of fire/traffic',
-    '📞 Keep talking to the person to maintain consciousness',
+    'Apply firm, continuous pressure to all bleeding wounds',
+    'Check breathing - if absent, begin CPR (30 compressions : 2 breaths)',
+    'Do NOT move the victim unless fire or traffic hazard',
+    'Stay on line with emergency dispatch until help arrives',
   ],
   MODERATE: [
-    '🧊 Keep the person still and calm',
-    '💊 Do not give food, water, or medication',
-    '🌡️ Keep warm if in shock — use jacket or blanket',
-    '👁️ Monitor breathing every 2 minutes',
+    'Keep the person still, warm and calm',
+    'No food, water, or medication until paramedics arrive',
+    'If in shock - cover with jacket or blanket',
+    'Check breathing every 2 minutes',
   ],
   MINOR: [
-    '🪑 Seat the person away from traffic',
-    '💧 Offer water if conscious and not injured around mouth',
-    '📋 Collect vehicle and witness details for report',
+    'Move the person away from traffic',
+    'Offer water if conscious and not injured around mouth',
+    'Collect vehicle numbers and witness contacts',
   ],
 };
 
 const BOT_INTRO = {
   role: 'bot',
-  text: '👋 I am RoadSoS AI. Describe what happened and I will find the right emergency services for you. You can type or speak.',
+  text: "I'm RoadSoS AI - describe what happened and I'll assess severity, find nearest emergency services, and give you step-by-step first aid guidance.",
   time: new Date(),
 };
 
+const QUICK_PROMPTS = [
+  { label: 'Car accident', text: 'There has been a car accident on the highway' },
+  { label: 'Injured person', text: 'Someone is injured and bleeding heavily' },
+  { label: 'Chest pain', text: 'Person has severe chest pain and difficulty breathing' },
+  { label: 'Breakdown', text: 'My vehicle broke down and I need towing' },
+];
+
 export default function ChatScreen() {
-  const { t } = useTranslation();
   const { location } = useGeolocation();
-  const { classify, severity } = useTriage();
+  const { classify } = useTriage();
   const [messages, setMessages] = useState([BOT_INTRO]);
   const [input, setInput] = useState('');
   const [typing, setTyping] = useState(false);
+  const [showPrompts, setShowPrompts] = useState(true);
+  const [isOnline] = useState(navigator.onLine);
   const bottomRef = useRef(null);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+  }, [messages, typing]);
 
   const sendMessage = async (text) => {
     if (!text.trim()) return;
+    setShowPrompts(false);
     const userMsg = { role: 'user', text, time: new Date() };
     setMessages(prev => [...prev, userMsg]);
     setInput('');
     setTyping(true);
 
     try {
-      // Step 1: Classify severity
       const result = await classify(text);
+      let foundHospitals = [];
+      let foundAmbulances = [];
 
-      // Step 2: Fetch nearest services if location available
-      let servicesText = '';
       if (location) {
-        const hospitals = navigator.onLine
-          ? await queryNearestOnline('hospital', location.lat, location.lon, 5000, 3)
-          : await queryNearest('hospital', location.lat, location.lon, 3);
-        const ambulances = navigator.onLine
-          ? await queryNearestOnline('ambulance', location.lat, location.lon, 5000, 3)
-          : await queryNearest('ambulance', location.lat, location.lon, 3);
-
-        if (hospitals.length > 0) {
-          servicesText += `\n\n🏥 **Nearest Hospitals:**\n${hospitals.slice(0,2).map((h,i) =>
-            `${i+1}. ${h.name} — ${h.approx_dist_m ? Math.round(h.approx_dist_m)+'m' : 'nearby'} — 📞 ${h.phone||'N/A'}`
-          ).join('\n')}`;
-        }
-        if (ambulances.length > 0) {
-          servicesText += `\n\n🚑 **Ambulance Services:**\n${ambulances.slice(0,2).map((a,i) =>
-            `${i+1}. ${a.name} — 📞 ${a.phone||'108'}`
-          ).join('\n')}`;
-        }
+        const hSearch = isOnline 
+          ? await queryNearestOnline('hospital', location.lat, location.lon, 8000, 2)
+          : await queryNearest('hospital', location.lat, location.lon, 2);
+        const aSearch = isOnline 
+          ? await queryNearestOnline('ambulance', location.lat, location.lon, 15000, 2)
+          : await queryNearest('ambulance', location.lat, location.lon, 2);
+        foundHospitals = hSearch || [];
+        foundAmbulances = aSearch || [];
       }
 
-      // Step 3: First aid guidance
-      const firstAidSteps = FIRST_AID[result?.severity || 'MODERATE'];
-      const firstAidText = `\n\n🩺 **Immediate First Aid:**\n${firstAidSteps.join('\n')}`;
-
-      const severity_labels = {
-        CRITICAL: '🔴 CRITICAL — Call ambulance immediately!',
-        MODERATE: '🟡 MODERATE — Seek medical attention soon',
-        MINOR: '🟢 MINOR — Monitor and assist',
-      };
-
-      const botReply = `**Severity: ${severity_labels[result?.severity || 'MODERATE']}**
-**Intent: ${result?.intent || 'accident'}**${servicesText}${firstAidText}
-
-💡 Tip: Press the big SOS button on the home screen to auto-call the nearest facility and alert your emergency contacts.`;
-
-      setMessages(prev => [...prev, { role: 'bot', text: botReply, severity: result?.severity, time: new Date() }]);
+      setMessages(prev => [...prev, {
+        role: 'bot',
+        text: `Based on your description, this situation appears to be **${result?.severity || 'MODERATE'}**.`,
+        severity: result?.severity,
+        firstAid: FIRST_AID[result?.severity || 'MODERATE'],
+        hospitals: foundHospitals,
+        ambulances: foundAmbulances,
+        time: new Date(),
+      }]);
     } catch (err) {
       setMessages(prev => [...prev, {
         role: 'bot',
-        text: '⚠️ Could not process your message. Please call 108 (ambulance) or 100 (police) directly.',
-        time: new Date()
+        text: 'Could not process your message. Please call 108 immediately.',
+        time: new Date(),
       }]);
     } finally {
       setTyping(false);
@@ -107,76 +97,65 @@ export default function ChatScreen() {
   };
 
   return (
-    <div className="flex flex-col h-screen bg-gray-950 pb-20">
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100dvh', background: 'var(--bg-base)', paddingBottom: 80 }}>
       {/* Header */}
-      <div className="bg-gray-900 px-4 py-3 border-b border-gray-800 flex items-center gap-3">
-        <div className="w-9 h-9 bg-red-600 rounded-full flex items-center justify-center">
-          <Bot size={20} className="text-white"/>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 18px', background: 'rgba(13,17,23,0.98)', borderBottom: '1px solid rgba(255,255,255,0.06)', backdropFilter: 'blur(20px)', position: 'sticky', top: 0, zIndex: 20 }}>
+        <div style={{ width: 42, height: 42, borderRadius: 13, background: 'linear-gradient(135deg, #ef4444, #991b1b)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <Bot size={22} color="#fff" />
         </div>
-        <div>
-          <p className="text-white font-bold text-sm">RoadSoS AI Assistant</p>
-          <p className="text-green-400 text-xs">● Online · AI Triage Active</p>
+        <div style={{ flex: 1 }}>
+          <p style={{ color: '#f0f4ff', fontWeight: 700, fontSize: 15 }}>RoadSoS AI</p>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+            <div className="status-dot" style={{ width: 6, height: 6, borderRadius: '50%', background: '#4ade80' }} />
+            <span style={{ color: '#4ade80', fontSize: 11 }}>Active</span>
+          </div>
+        </div>
+        <div style={{ display: 'flex', gap: 6 }}>
+          {['108', '100'].map(num => (
+            <a key={num} href={`tel:${num}`} style={{ background: 'rgba(255,255,255,0.05)', padding: '6px 12px', borderRadius: 10, color: '#fff', fontSize: 12, textDecoration: 'none', border: '1px solid rgba(255,255,255,0.1)' }}>{num}</a>
+          ))}
         </div>
       </div>
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3">
+      <div style={{ flex: 1, overflowY: 'auto', padding: '16px', display: 'flex', flexDirection: 'column', gap: 16 }}>
         {messages.map((msg, i) => (
-          <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-            {msg.role === 'bot' && (
-              <div className="w-7 h-7 bg-red-600 rounded-full flex items-center justify-center mr-2 mt-1 flex-shrink-0">
-                <Bot size={14} className="text-white"/>
-              </div>
-            )}
-            <div className={`max-w-[82%] rounded-2xl px-4 py-2.5 text-sm whitespace-pre-wrap
-              ${msg.role === 'user'
-                ? 'bg-red-600 text-white rounded-tr-sm'
-                : 'bg-gray-800 text-gray-100 rounded-tl-sm'}`}>
-              {msg.severity && <TriageBadge severity={msg.severity} compact />}
-              {msg.text.replace(/\*\*/g, '')}
-              <div className={`text-xs mt-1 ${msg.role === 'user' ? 'text-red-200' : 'text-gray-500'}`}>
-                {msg.time?.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}
-              </div>
+          <div key={i} style={{ display: 'flex', flexDirection: msg.role === 'user' ? 'row-reverse' : 'row', gap: 10 }}>
+            <div style={{ maxWidth: '85%', background: msg.role === 'bot' ? 'rgba(26,32,53,0.95)' : '#ef4444', padding: '12px 14px', borderRadius: 16, border: '1px solid rgba(255,255,255,0.05)' }}>
+              {msg.severity && <div style={{ marginBottom: 8 }}><TriageBadge severity={msg.severity} compact /></div>}
+              <p style={{ color: '#fff', fontSize: 13, lineHeight: 1.5 }}>{msg.text}</p>
+              
+              {msg.firstAid && (
+                <div style={{ marginTop: 10, padding: 10, background: 'rgba(255,255,255,0.03)', borderRadius: 10 }}>
+                  <p style={{ fontSize: 11, fontWeight: 800, color: '#ef4444', marginBottom: 4 }}>FIRST AID</p>
+                  {msg.firstAid.map((s, idx) => <p key={idx} style={{ fontSize: 12, color: 'rgba(255,255,255,0.7)' }}>- {s}</p>)}
+                </div>
+              )}
+
+              {msg.hospitals && msg.hospitals.length > 0 && (
+                <div style={{ marginTop: 10 }}>
+                  <p style={{ fontSize: 11, fontWeight: 800, color: '#3b82f6', marginBottom: 4 }}>NEARBY</p>
+                  {msg.hospitals.map((h, idx) => (
+                    <div key={idx} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'rgba(255,255,255,0.04)', padding: 8, borderRadius: 8, marginBottom: 4 }}>
+                      <span style={{ fontSize: 12, color: '#f0f4ff' }}>{h.name}</span>
+                      <a href={`tel:${h.phone || '108'}`} style={{ color: '#60a5fa' }}><Phone size={12} /></a>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
-            {msg.role === 'user' && (
-              <div className="w-7 h-7 bg-gray-700 rounded-full flex items-center justify-center ml-2 mt-1 flex-shrink-0">
-                <User size={14} className="text-white"/>
-              </div>
-            )}
           </div>
         ))}
-        {typing && (
-          <div className="flex items-center gap-2 text-gray-400 text-sm">
-            <div className="w-7 h-7 bg-red-600 rounded-full flex items-center justify-center">
-              <Bot size={14} className="text-white animate-pulse"/>
-            </div>
-            <span className="animate-pulse">Analyzing emergency...</span>
-          </div>
-        )}
-        <div ref={bottomRef}/>
+        {typing && <div style={{ color: 'rgba(255,255,255,0.4)', fontSize: 12 }}>AI is thinking...</div>}
+        <div ref={bottomRef} />
       </div>
 
       {/* Input */}
-      <div className="px-4 pb-4 pt-2 bg-gray-900 border-t border-gray-800">
-        <div className="flex gap-2">
-          <input
-            className="flex-1 bg-gray-800 text-white rounded-xl px-4 py-3 text-sm outline-none border border-gray-700 focus:border-red-500"
-            placeholder="Describe what happened..."
-            value={input}
-            onChange={e => setInput(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && sendMessage(input)}
-          />
-          <VoiceInput onResult={(t) => { setInput(t); sendMessage(t); }} />
-          <button
-            onClick={() => sendMessage(input)}
-            className="bg-red-600 hover:bg-red-700 text-white rounded-xl px-4 py-3 transition-colors"
-          >
-            <Send size={18}/>
-          </button>
+      <div style={{ padding: '12px', background: 'var(--bg-base)', borderTop: '1px solid rgba(255,255,255,0.06)', position: 'fixed', bottom: 64, left: 0, right: 0 }}>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <input className="input-field" style={{ flex: 1, borderRadius: 12, padding: '12px' }} placeholder="Describe the emergency..." value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && sendMessage(input)} />
+          <button onClick={() => sendMessage(input)} style={{ background: '#ef4444', border: 'none', borderRadius: 12, padding: '0 15px', color: '#fff' }}>Send</button>
         </div>
-        <p className="text-gray-600 text-xs mt-1.5 text-center">
-          Emergency? Call 108 (Ambulance) · 100 (Police) · 112 (Universal)
-        </p>
       </div>
     </div>
   );

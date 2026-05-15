@@ -34,84 +34,157 @@ function MapCenterer({ lat, lon }) {
 
 export default function MapScreen() {
   const { location } = useGeolocation();
-  const [services, setServices] = useState([]);
-  const [activeFilters, setActiveFilters] = useState(['hospital','ambulance','police']);
-  const [loading, setLoading] = useState(false);
+  const [services, setServices] = useState({}); // changed to object: { category: [results] }
+  const [activeFilters, setActiveFilters] = useState(['hospital', 'ambulance', 'police']);
+  const [loadingCats, setLoadingCats] = useState(new Set());
+  const [loadedCats, setLoadedCats] = useState(new Set());
 
+  // Unified fetcher for a single category
+  const fetchCategory = async (cat, lat, lon, force = false) => {
+    if (!lat || !lon) return;
+    if (!force && loadedCats.has(cat)) return;
+
+    setLoadingCats(prev => new Set(prev).add(cat));
+    try {
+      const results = navigator.onLine
+        ? await queryNearestOnline(cat, lat, lon, 5000, 8)
+        : await queryNearest(cat, lat, lon, 8);
+      
+      const formatted = results.filter(r => r.lat && r.lon).map(r => ({ ...r, category: cat }));
+      
+      setServices(prev => ({ ...prev, [cat]: formatted }));
+      setLoadedCats(prev => new Set(prev).add(cat));
+    } catch (err) {
+      console.error(`Failed to fetch ${cat}:`, err);
+    } finally {
+      setLoadingCats(prev => {
+        const next = new Set(prev);
+        next.delete(cat);
+        return next;
+      });
+    }
+  };
+
+  // Reset when location changes
   useEffect(() => {
-    if (!location) return;
-    setLoading(true);
-    const fetchAll = async () => {
-      const cats = ['hospital','ambulance','police','towing','puncture'];
-      const all = [];
-      for (const cat of cats) {
-        const res = navigator.onLine
-          ? await queryNearestOnline(cat, location.lat, location.lon, 8000, 5)
-          : await queryNearest(cat, location.lat, location.lon, 5);
-        res.forEach(r => r.lat && r.lon && all.push({ ...r, category: cat }));
-      }
-      setServices(all);
-      setLoading(false);
-    };
-    fetchAll().catch(() => setLoading(false));
-  }, [location]);
+    if (location) {
+      setServices({});
+      setLoadedCats(new Set());
+      // Initial fetch for default filters
+      activeFilters.forEach(cat => fetchCategory(cat, location.lat, location.lon));
+    }
+  }, [location?.lat, location?.lon]);
+
+  // Fetch when filters change
+  useEffect(() => {
+    if (location) {
+      activeFilters.forEach(cat => {
+        if (!loadedCats.has(cat)) {
+          fetchCategory(cat, location.lat, location.lon);
+        }
+      });
+    }
+  }, [activeFilters, location, loadedCats]);
 
   const toggleFilter = (cat) => {
     setActiveFilters(prev => prev.includes(cat) ? prev.filter(c=>c!==cat) : [...prev, cat]);
   };
 
-  const visible = services.filter(s => activeFilters.includes(s.category));
+  const visible = activeFilters.flatMap(cat => services[cat] || []);
+
+  // Measure the header height dynamically — use a ref instead of guessing
+  const headerRef = React.useRef(null);
 
   return (
-    <div className="flex flex-col h-screen bg-gray-950 pb-20">
-      <div className="bg-gray-900 px-4 py-3 border-b border-gray-800">
-        <h2 className="text-white font-bold">Emergency Map</h2>
-        <div className="flex gap-2 mt-2 overflow-x-auto">
-          {Object.entries(CAT_ICONS).map(([cat, icon]) => (
-            <button key={cat} onClick={() => toggleFilter(cat)}
-              className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold whitespace-nowrap transition-colors
-                ${activeFilters.includes(cat) ? 'text-white' : 'bg-gray-800 text-gray-500'}`}
-              style={activeFilters.includes(cat) ? { background: CAT_COLORS[cat] } : {}}>
-              {icon} {cat}
-            </button>
-          ))}
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100dvh', background: 'var(--bg-base)' }}>
+      <div className="map-header" style={{ padding: '16px 16px 12px', borderBottom: '1px solid rgba(255,255,255,0.06)', position: 'sticky', top: 0, zIndex: 20 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+          <div style={{ width: 36, height: 36, borderRadius: 10, background: 'rgba(59,130,246,0.15)', border: '1px solid rgba(59,130,246,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18 }}>🗺️</div>
+          <div>
+            <h2 style={{ color: '#f0f4ff', fontWeight: 800, fontSize: 18, fontFamily: "'Outfit', sans-serif", letterSpacing: '-0.01em' }}>Emergency Map</h2>
+            <p style={{ color: 'rgba(255,255,255,0.35)', fontSize: 11 }}>Nearby services in real-time</p>
+          </div>
+          {loadingCats.size > 0 && (
+            <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6, color: '#60a5fa', fontSize: 12 }}>
+              <div style={{ width: 10, height: 10, borderRadius: '50%', border: '2px solid rgba(96,165,250,0.3)', borderTop: '2px solid #60a5fa', animation: 'spin 1s linear infinite' }} />
+              Updating…
+            </div>
+          )}
+        </div>
+        <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 2, scrollbarWidth: 'none' }}>
+          {Object.entries(CAT_ICONS).map(([cat, icon]) => {
+            const active = activeFilters.includes(cat);
+            return (
+              <button key={cat} onClick={() => toggleFilter(cat)} style={{
+                flexShrink: 0, display: 'flex', alignItems: 'center', gap: 5,
+                padding: '6px 14px', borderRadius: 20, border: 'none', cursor: 'pointer',
+                fontWeight: 700, fontSize: 12, transition: 'all 0.2s', whiteSpace: 'nowrap',
+                background: active ? CAT_COLORS[cat] : 'rgba(255,255,255,0.06)',
+                color: active ? '#fff' : 'rgba(255,255,255,0.4)',
+                boxShadow: active ? `0 4px 14px ${CAT_COLORS[cat]}50` : 'none',
+                transform: active ? 'translateY(-1px)' : 'none',
+              }}>
+                <span style={{ fontSize: 14 }}>{icon}</span>
+                <span style={{ textTransform: 'capitalize' }}>{cat}</span>
+              </button>
+            );
+          })}
         </div>
       </div>
 
-      <div className="flex-1 relative">
-        {loading && (
-          <div className="absolute top-2 left-1/2 -translate-x-1/2 z-[1000] bg-gray-900 text-white text-xs px-3 py-1.5 rounded-full">
-            Loading services...
-          </div>
-        )}
-        <MapContainer center={location ? [location.lat, location.lon] : [13.0827, 80.2707]}
-          zoom={13} style={{ height: '100%', width: '100%' }} zoomControl={false}>
+      <div style={{ flex: 1, minHeight: 0, position: 'relative', overflow: 'hidden' }}>
+        <MapContainer
+          center={location ? [location.lat, location.lon] : [13.0827, 80.2707]}
+          zoom={13}
+          style={{ height: '100%', width: '100%', minHeight: 300 }}
+          zoomControl={false}
+        >
           <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
             attribution='&copy; <a href="https://openstreetmap.org">OpenStreetMap</a>' />
           {location && <>
             <MapCenterer lat={location.lat} lon={location.lon} />
             <Marker position={[location.lat, location.lon]} icon={userIcon()}>
-              <Popup><strong>📍 Your Location</strong><br/>{location.lat.toFixed(5)}, {location.lon.toFixed(5)}</Popup>
+              <Popup>
+                <strong style={{ color: '#f0f4ff' }}>📍 Your Location</strong><br/>
+                <span style={{ color: '#8892a4', fontSize: 12 }}>{location.lat.toFixed(5)}, {location.lon.toFixed(5)}</span>
+              </Popup>
             </Marker>
             <Circle center={[location.lat, location.lon]} radius={5000}
-              pathOptions={{ color:'#ef4444', fillColor:'#ef4444', fillOpacity:0.05, weight:1, dashArray:'6,4' }}/>
+              pathOptions={{ color: '#ef4444', fillColor: '#ef4444', fillOpacity: 0.04, weight: 1.5, dashArray: '6,5' }} />
           </>}
           {visible.map((svc, i) => svc.lat && svc.lon && (
             <Marker key={i} position={[svc.lat, svc.lon]} icon={createCategoryIcon(svc.category)}>
               <Popup>
-                <div style={{minWidth:180}}>
-                  <strong>{CAT_ICONS[svc.category]} {svc.name}</strong><br/>
-                  {svc.address && <><span style={{color:'#666',fontSize:12}}>{svc.address}</span><br/></>}
+                <div style={{ minWidth: 190 }}>
+                  <strong style={{ color: '#f0f4ff', fontSize: 13 }}>{CAT_ICONS[svc.category]} {svc.name}</strong><br/>
+                  {svc.address && <><span style={{ color: '#8892a4', fontSize: 11 }}>{svc.address}</span><br/></>}
                   {svc.phone && svc.phone !== 'N/A' && (
-                    <a href={`tel:${svc.phone}`} style={{color:'#ef4444',fontWeight:'bold'}}>📞 {svc.phone}</a>
+                    <a href={`tel:${svc.phone}`} style={{ color: '#ef4444', fontWeight: 700, fontSize: 13, display: 'inline-block', marginTop: 4 }}>📞 {svc.phone}</a>
                   )}
-                  {svc.approx_dist_m && <><br/><span style={{color:'#888',fontSize:11}}>{Math.round(svc.approx_dist_m)}m away</span></>}
+                  {svc.approx_dist_m && <><br/><span style={{ color: '#4e5a6e', fontSize: 11 }}>{Math.round(svc.approx_dist_m)}m away</span></>}
                 </div>
               </Popup>
             </Marker>
           ))}
         </MapContainer>
+
+        {/* Floating Action Buttons */}
+        <div style={{ position: 'absolute', bottom: 20, right: 20, zIndex: 1000, display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <button
+            onClick={() => { if (location) { /* handle via re-render of MapCenterer */ } }}
+            style={{
+              width: 50, height: 50, borderRadius: 16, background: '#ef4444', border: 'none',
+              boxShadow: '0 8px 24px rgba(239,68,68,0.4)', color: '#fff', cursor: 'pointer',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s',
+            }}
+            onMouseEnter={e => e.currentTarget.style.transform = 'scale(1.05)'}
+            onMouseLeave={e => e.currentTarget.style.transform = 'scale(1)'}
+          >
+            <Navigation size={22} fill="white" />
+          </button>
+        </div>
       </div>
+      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
     </div>
   );
 }
