@@ -57,7 +57,7 @@ Copy `.env.example` to `.env` and fill in:
 - `ANTHROPIC_API_KEY` — Claude API (optional, online fallback)
 - `TWILIO_ACCOUNT_SID` / `TWILIO_AUTH_TOKEN` — SMS alerts
 - `TELEGRAM_BOT_TOKEN` — Telegram SOS channel
-- `OVERPASS_API_URL` — defaults to https://overpass-api.de/api/interpreter
+- OVERPASS_API_URL — OpenStreetMap Overpass API endpoint for emergency service lookup
 
 ## 🏆 Problem Statement Coverage (PS 1.3)
 - ✅ Nearest Police Stations, Hospitals, Ambulances
