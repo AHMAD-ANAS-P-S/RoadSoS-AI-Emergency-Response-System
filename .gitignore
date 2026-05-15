@@ -24,3 +24,7 @@ yarn-error.log*
 # IDE folders
 .vscode/
 .idea/
+
+# Python cache
+__pycache__/
+*.pyc
