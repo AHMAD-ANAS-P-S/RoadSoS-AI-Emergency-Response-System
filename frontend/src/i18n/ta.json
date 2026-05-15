@@ -1,0 +1,21 @@
+{
+  "header": { "tagline": "AI அவசரகால பதில்" },
+  "sos": {
+    "inputPlaceholder": "என்ன நடந்தது என்று சொல்லுங்கள்...",
+    "locationDetected": "இடம்",
+    "searching": "அருகிலுள்ள சேவைகளை தேடுகிறது...",
+    "noResults": "அருகில் சேவைகள் இல்லை.",
+    "enableLocation": "அவசரகால சேவைகளை கண்டறிய இருப்பிடத்தை இயக்கவும்"
+  },
+  "category": {
+    "hospital": "மருத்துவமனை",
+    "ambulance": "ஆம்புலன்ஸ்",
+    "police": "காவல்துறை",
+    "towing": "டோயிங்",
+    "puncture": "பஞ்சர்"
+  },
+  "error": {
+    "fetchFailed": "சேவைகளை பெற முடியவில்லை.",
+    "locationFailed": "இடம் கிடைக்கவில்லை."
+  }
+}

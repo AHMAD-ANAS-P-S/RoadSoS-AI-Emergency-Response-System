@@ -1,0 +1,21 @@
+{
+  "header": { "tagline": "AI Emergency Response" },
+  "sos": {
+    "inputPlaceholder": "Describe what happened (e.g. bike accident near flyover)...",
+    "locationDetected": "Location",
+    "searching": "Finding nearest services...",
+    "noResults": "No services found nearby. Try expanding search.",
+    "enableLocation": "Enable location to find nearby emergency services"
+  },
+  "category": {
+    "hospital": "Hospitals",
+    "ambulance": "Ambulance",
+    "police": "Police",
+    "towing": "Towing",
+    "puncture": "Puncture"
+  },
+  "error": {
+    "fetchFailed": "Could not fetch services. Check connection.",
+    "locationFailed": "Location unavailable. Please enter manually."
+  }
+}
